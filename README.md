@@ -119,23 +119,28 @@ This will:
 
 ## Results & Visualizations
 
-### Confidence Distribution
-![Confidence Distribution](plots/1_confidence_distribution.png)
-*Judge confidence levels for correct vs incorrect answers*
+### Performance Comparison: Baselines vs System
+![Baseline Comparison](plots/4_baseline_comparison.png)
+*Comparison of a Single-LLM, Majority Vote (no debate), and the Full Debate System.*
 
 ### Accuracy by Category
 ![Accuracy by Category](plots/2_accuracy_by_category.png)
-*Performance breakdown across different problem categories*
+*Performance breakdown across different problem categories.*
 
 ### Winner Distribution
 ![Winner Distribution](plots/3_winner_distribution.png)
+*Distribution of which persona's solution was ultimately selected by the Judge.*
 
-![Winner Distribution](plots/4_performance_dashboard.png)
+### Confidence Distribution
+![Confidence Distribution](plots/1_confidence_distribution.png)
+*Judge confidence levels compared to actual correctness.*
 
-### Key Findings
-- **System Reliability:** 92% completion rate, with 8% errors.
-- **Confidence Alignment:** Average judge confidence of 0.91 correlates strongly with correctness.
-- **Top Persona:** The Skeptical Critic often produces the best answers, highlighting the value of careful review.
+### Key Evaluation Metrics
+The Phase 3 evaluation pipeline automatically calculates several advanced system-level metrics:
+- **Baseline Tracking:** Compares the final multi-agent debate answer against the single-LLM approach and a simple majority vote.
+- **Consensus Rate:** Tracks how often all three solvers reach the exact same answer after peer-review refinement.
+- **Improvement Tracking:** Identifies specific cases where the refinement stage successfully fixed an initially incorrect answer.
+- **Judge Accuracy:** Evaluates the Judge's ability to pick the correct answer specifically in scenarios where the Solvers failed to reach consensus.
 
 ---
 
@@ -167,7 +172,7 @@ This will:
 
 1. **Shared knowledge gaps:** If all agents lack domain knowledge, peer review cannot resolve mistakes.
 2. **Computational cost:** The workflow requires multiple API calls per problem.
-3. **Error rate:** Around 8%, often due to JSON parsing issues or API failures.
+3. **Error rate:** Occasional parsing failures, often due to JSON formatting issues or API timeouts.
 
 ---
 

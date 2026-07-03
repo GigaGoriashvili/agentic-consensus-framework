@@ -2,10 +2,13 @@ import json
 import os
 import logging
 import sys
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 from tqdm import tqdm
 import numpy as np
+from collections import Counter
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
@@ -21,6 +24,7 @@ logger = logging.getLogger(__name__)
 DATA_DIR = "data"
 PLOTS_DIR = "plots"
 os.makedirs(PLOTS_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 plt.style.use('default')
 plt.rcParams['figure.dpi'] = 300
@@ -31,7 +35,6 @@ plt.rcParams['grid.alpha'] = 0.3
 
 
 def check_correctness(judge_agent, system_answer: str, correct_answer: str) -> bool:
-   
     system_prompt = (
         "You are an impartial answer grader. Compare the system's answer with the ground truth.\n"
         "Answers are considered correct if they are semantically equivalent, even if formatted differently.\n"
@@ -57,30 +60,43 @@ def check_correctness(judge_agent, system_answer: str, correct_answer: str) -> b
         )
         
         cleaned_response = response.strip().upper()
-        
-        print(f"ground Truth: {correct_answer}")
-        print(f"system Answer: {system_answer}")
-        print(f"grader Response: {cleaned_response}")
-        
         if "YES" in cleaned_response:
-            print("correct")
             return True
         elif "NO" in cleaned_response:
-            print("incorrect")
             return False
         else:
-            result = system_answer.strip().lower() == correct_answer.strip().lower()
-            print(f"{result}")
-            return result
+            return str(system_answer).strip().lower() == str(correct_answer).strip().lower()
             
     except Exception as e:
-        result = system_answer.strip().lower() == correct_answer.strip().lower()
-        print(f"fallback comparison: {result}")
-        return result
+        return str(system_answer).strip().lower() == str(correct_answer).strip().lower()
+
+
+def get_majority_answer(answers: list) -> str:
+    """Helper to find the majority answer among the 3 initial solutions for the voting baseline."""
+    if not answers:
+        return "ERROR"
+    # Normalize strings for voting
+    norm_answers = [str(a).strip().lower() for a in answers]
+    counts = Counter(norm_answers)
+    majority_norm = counts.most_common(1)[0][0]
+    
+    # Return the original case answer that matches the majority
+    for a in answers:
+        if str(a).strip().lower() == majority_norm:
+            return a
+    return answers[0]
+
+
+def check_consensus(answers: list) -> bool:
+    """Helper to check if all 3 solvers reached the same answer in Stage 3."""
+    if len(answers) < 3:
+        return False
+    norm_answers = [str(a).strip().lower() for a in answers]
+    return len(set(norm_answers)) == 1
 
 
 def create_plots(df):
-   
+    # 1. Confidence Distribution
     plt.figure(figsize=(10, 6))
     correct_conf = df[df["is_correct"]]["confidence"]
     incorrect_conf = df[~df["is_correct"]]["confidence"]
@@ -92,16 +108,14 @@ def create_plots(df):
     plt.ylabel("Count", fontsize=12, fontweight='bold')
     plt.title("Confidence Distribution by Correctness", fontsize=14, fontweight='bold')
     plt.legend(fontsize=10)
-    plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.savefig(f"{PLOTS_DIR}/1_confidence_distribution.png")
     plt.close()
  
+    # 2. Accuracy by Category
     if len(df) > 1 and 'category' in df.columns:
         fig, ax = plt.subplots(figsize=(10, 6))
-        category_stats = df.groupby('category').agg({
-            'is_correct': ['mean', 'count']
-        }).reset_index()
+        category_stats = df.groupby('category').agg({'is_correct': ['mean', 'count']}).reset_index()
         category_stats.columns = ['category', 'accuracy', 'count']
         category_stats['accuracy'] = category_stats['accuracy'] * 100
         
@@ -113,24 +127,21 @@ def create_plots(df):
             ax.text(bar.get_x() + bar.get_width()/2., height + 2,
                    f'n={int(count)}', ha='center', va='bottom', fontsize=9)
         
-        ax.set_ylabel("accuracy ", fontsize=12, fontweight='bold')
-        ax.set_xlabel("category", fontsize=12, fontweight='bold')
-        ax.set_title("accuracy by Problem Category", fontsize=14, fontweight='bold')
+        ax.set_ylabel("Accuracy (%)", fontsize=12, fontweight='bold')
+        ax.set_xlabel("Category", fontsize=12, fontweight='bold')
+        ax.set_title("Accuracy by Problem Category", fontsize=14, fontweight='bold')
         ax.set_ylim(0, 110)
         ax.axhline(y=50, color='gray', linestyle='--', alpha=0.5, label='50% threshold')
-        ax.legend()
         plt.xticks(rotation=45, ha='right')
-        plt.grid(alpha=0.3, axis='y')
         plt.tight_layout()
         plt.savefig(f"{PLOTS_DIR}/2_accuracy_by_category.png")
         plt.close()
        
+    # 3. Winner Distribution
     if len(df) > 1:
         plt.figure(figsize=(10, 6))
         winner_counts = df['winner_role'].value_counts()
-        
-        n_colors = len(winner_counts)
-        colors = plt.cm.Set3(np.linspace(0, 1, n_colors))
+        colors = plt.cm.Set3(np.linspace(0, 1, len(winner_counts)))
         
         plt.pie(winner_counts.values, labels=winner_counts.index, autopct='%1.1f%%',
                colors=colors, startangle=90, textprops={'fontsize': 10, 'fontweight': 'bold'})
@@ -138,72 +149,31 @@ def create_plots(df):
         plt.tight_layout()
         plt.savefig(f"{PLOTS_DIR}/3_winner_distribution.png")
         plt.close()
-     
- 
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10))
-  
-    accuracy = df["is_correct"].mean() * 100
-    ax1.text(0.5, 0.6, f"{accuracy:.1f}%", ha='center', va='center', 
-            fontsize=60, fontweight='bold', 
-            color='#10b981' if accuracy >= 50 else '#ef4444')
-    ax1.text(0.5, 0.3, "Overall Accuracy", ha='center', va='center', 
-            fontsize=16, fontweight='bold')
-    ax1.set_xlim(0, 1)
-    ax1.set_ylim(0, 1)
-    ax1.axis('off')
-    
-    correct_count = df["is_correct"].sum()
-    incorrect_count = len(df) - correct_count
-    ax2.bar(['Correct', 'Incorrect'], [correct_count, incorrect_count],
-           color=['#10b981', '#ef4444'], alpha=0.7, edgecolor='black')
-    ax2.set_ylabel("Count", fontweight='bold')
-    ax2.set_title("Correct vs Incorrect Answers", fontweight='bold')
-    ax2.grid(alpha=0.3, axis='y')
 
-    avg_conf_correct = df[df["is_correct"]]["confidence"].mean() if correct_count > 0 else 0
-    avg_conf_incorrect = df[~df["is_correct"]]["confidence"].mean() if incorrect_count > 0 else 0
-    
-    bars = ax3.bar(['Correct Answers', 'Incorrect Answers'], 
-                  [avg_conf_correct, avg_conf_incorrect],
-                  color=['#10b981', '#ef4444'], alpha=0.7, edgecolor='black')
-    
-    for bar in bars:
-        height = bar.get_height()
-        ax3.text(bar.get_x() + bar.get_width()/2., height + 0.02,
-                f'{height:.2f}', ha='center', va='bottom', fontweight='bold')
-    
-    ax3.set_ylabel("Average Confidence", fontweight='bold')
-    ax3.set_title("Mean Confidence by Correctness", fontweight='bold')
-    ax3.set_ylim(0, 1.1)
-    ax3.grid(alpha=0.3, axis='y')
-    
-    ax4.axis('off')
-    stats_data = [
-        ["Total Problems", f"{len(df)}"],
-        ["Correct", f"{correct_count}"],
-        ["Incorrect", f"{incorrect_count}"],
-        ["Accuracy", f"{accuracy:.2f}%"],
-        ["Avg Confidence", f"{df['confidence'].mean():.3f}"],
-        ["Confidence Std", f"{df['confidence'].std():.3f}"],
-    ]
-    
-    table = ax4.table(cellText=stats_data, cellLoc='left',
-                     colWidths=[0.6, 0.4], loc='center',
-                     bbox=[0, 0, 1, 1])
-    table.auto_set_font_size(False)
-    table.set_fontsize(11)
-    table.scale(1, 2)
-    
-    for i in range(len(stats_data)):
-        table[(i, 0)].set_facecolor('#f0f0f0')
-        table[(i, 0)].set_text_props(weight='bold')
-        table[(i, 1)].set_facecolor('#ffffff')
-    
-    ax4.set_title("Summary Statistics", fontweight='bold', fontsize=12, pad=20)
-    
-    plt.tight_layout()
-    plt.savefig(f"{PLOTS_DIR}/5_performance_dashboard.png")
-    plt.close()
+    # 4. NEW REQUIRED PLOT: Baselines vs Full System
+    if len(df) > 0:
+        plt.figure(figsize=(9, 6))
+        baselines = ['Single LLM', 'Majority Vote\n(No Debate)', 'Full Debate\nSystem']
+        accuracies = [
+            df['single_llm_correct'].mean() * 100,
+            df['voting_correct'].mean() * 100,
+            df['is_correct'].mean() * 100
+        ]
+        colors = ['#3b82f6', '#f59e0b', '#10b981']
+        
+        bars = plt.bar(baselines, accuracies, color=colors, edgecolor='black', alpha=0.8)
+        
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width()/2., height + 1.5,
+                     f'{height:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=12)
+                     
+        plt.title('Performance Comparison: Baselines vs Full System', fontsize=14, fontweight='bold')
+        plt.ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
+        plt.ylim(0, max(accuracies) + 15)  # Leave room for labels
+        plt.tight_layout()
+        plt.savefig(f"{PLOTS_DIR}/4_baseline_comparison.png")
+        plt.close()
 
 
 def evaluate_and_plot():
@@ -228,16 +198,42 @@ def evaluate_and_plot():
         correct_answer = problem["correct_answer"]
         category = problem["category"]
         
+        print(f"\n{'='*50}")
         print(f"PROBLEM {problem_id}: {category}")
+        print(f"{'='*50}")
         
         try:
             verdict, history = orchestrator.run_full_debate(question)
             
-            is_correct = check_correctness(
-                grader_agent, 
-                verdict.winning_answer, 
-                correct_answer
-            )
+            # Extract Stage 1 (Initial) and Stage 3 (Refined) answers
+            s1_solutions = history.get("stage_1_solutions", {})
+            s3_solutions = history.get("stage_3_refined", {})
+            
+            s1_answers = [sol.refined_answer for sol in s1_solutions.values()]
+            s3_answers = [sol.refined_answer for sol in s3_solutions.values()]
+            
+            # --- CALCULATE METRICS AND BASELINES ---
+            
+            # 1. Full System Correctness
+            is_correct = check_correctness(grader_agent, verdict.winning_answer, correct_answer)
+            
+            # 2. Single-LLM Baseline (Just evaluate the first solver's initial answer)
+            single_llm_answer = s1_answers[0] if s1_answers else "ERROR"
+            single_llm_correct = check_correctness(grader_agent, single_llm_answer, correct_answer)
+            
+            # 3. Simple Voting Baseline (Majority vote of Stage 1 answers)
+            voting_answer = get_majority_answer(s1_answers)
+            voting_correct = check_correctness(grader_agent, voting_answer, correct_answer)
+            
+            # 4. Consensus Rate
+            has_consensus = check_consensus(s3_answers)
+            
+            # 5. Improvement Rate (Failed single LLM, but Full System got it right)
+            improved = (not single_llm_correct) and is_correct
+            
+            # 6. Judge Accuracy on Disagreement
+            solvers_disagreed = not has_consensus
+            judge_saved_the_day = solvers_disagreed and is_correct
             
             results.append({
                 "id": problem_id,
@@ -248,6 +244,12 @@ def evaluate_and_plot():
                 "winner_role": verdict.winner,
                 "confidence": verdict.confidence,
                 "is_correct": is_correct,
+                "single_llm_correct": single_llm_correct,
+                "voting_correct": voting_correct,
+                "improved": improved,
+                "has_consensus": has_consensus,
+                "solvers_disagreed": solvers_disagreed,
+                "judge_saved_the_day": judge_saved_the_day,
                 "judge_reasoning": verdict.reasoning,
             })
             
@@ -262,41 +264,56 @@ def evaluate_and_plot():
                 "winner_role": "Error",
                 "confidence": 0.0,
                 "is_correct": False,
+                "single_llm_correct": False,
+                "voting_correct": False,
+                "improved": False,
+                "has_consensus": False,
+                "solvers_disagreed": False,
+                "judge_saved_the_day": False,
                 "judge_reasoning": str(e),
             })
 
-  
+    # Save RAW results
     with open(f"{DATA_DIR}/results_raw.json", "w") as f:
         json.dump(results, f, indent=2)
 
+    # --- PRINT FINAL PHASE 3 METRICS ---
     df = pd.DataFrame(results)
-    accuracy = df["is_correct"].mean() * 100
     
-    print('FINAL RESULTS')
-    print(f"total Problems: {len(results)}")
-    print(f"correct: {df['is_correct'].sum()}")
-    print(f"incorrect: {(~df['is_correct']).sum()}")
-    print(f"accuracy: {accuracy:.2f}%")
-    print(f"average confidence: {df['confidence'].mean():.3f}")
-  
+    print('\n' + '='*50)
+    print('FINAL PHASE 3 EVALUATION RESULTS')
+    print('='*50)
+    print(f"Total Problems: {len(results)}")
+    print(f"Correct (Full System): {df['is_correct'].sum()}")
+    print(f"Incorrect (Full System): {(~df['is_correct']).sum()}")
+    print(f"Average Judge Confidence: {df['confidence'].mean():.3f}\n")
+    
+    print("--- BASELINE COMPARISONS ---")
+    print(f"1. Single-LLM Accuracy:  {df['single_llm_correct'].mean() * 100:.1f}%")
+    print(f"2. Simple Voting Accuracy: {df['voting_correct'].mean() * 100:.1f}%")
+    print(f"3. Full System Accuracy: {df['is_correct'].mean() * 100:.1f}%\n")
+    
+    print("--- SYSTEM METRICS ---")
+    print(f"Consensus Rate (All 3 agreed): {df['has_consensus'].mean() * 100:.1f}%")
+    print(f"Improvement Count (Refinement fixed initial failure): {df['improved'].sum()} problems")
+    
+    disagreements = df['solvers_disagreed'].sum()
+    if disagreements > 0:
+        judge_acc = (df['judge_saved_the_day'].sum() / disagreements) * 100
+        print(f"Judge Accuracy (When solvers disagreed): {judge_acc:.1f}% ({df['judge_saved_the_day'].sum()}/{disagreements} times)")
+    else:
+        print("Judge Accuracy (When solvers disagreed): N/A (Solvers always agreed)")
+    
     if len(df) > 0:
-        print("\nAccuracy by Category:")
+        print("\n--- ACCURACY BY CATEGORY ---")
         category_accuracy = df.groupby('category')['is_correct'].agg(['mean', 'count'])
         category_accuracy['mean'] = category_accuracy['mean'] * 100
         category_accuracy.columns = ['Accuracy (%)', 'Count']
         print(category_accuracy)
-        print()
-
-    if len(df) > 0:
-        print("\nWinner Distribution:")
-        winner_stats = df['winner_role'].value_counts()
-        for winner, count in winner_stats.items():
-            pct = (count / len(df)) * 100
-            print(f"  {winner}: {count} ({pct:.1f}%)")
-        print()
     
+    # Generate Plots
     create_plots(df)
-
+    print(f"\nAll plots saved to ./{PLOTS_DIR}/")
 
 
 if __name__ == "__main__":
