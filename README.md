@@ -135,12 +135,26 @@ This will:
 ![Confidence Distribution](plots/1_confidence_distribution.png)
 *Judge confidence levels compared to actual correctness.*
 
-### Key Evaluation Metrics
-The Phase 3 evaluation pipeline automatically calculates several advanced system-level metrics:
-- **Baseline Tracking:** Compares the final multi-agent debate answer against the single-LLM approach and a simple majority vote.
-- **Consensus Rate:** Tracks how often all three solvers reach the exact same answer after peer-review refinement.
-- **Improvement Tracking:** Identifies specific cases where the refinement stage successfully fixed an initially incorrect answer.
-- **Judge Accuracy:** Evaluates the Judge's ability to pick the correct answer specifically in scenarios where the Solvers failed to reach consensus.
+### Final Evaluation Metrics (Run Results)
+Based on our final evaluation of 25 challenging problems, the Phase 3 pipeline yielded the following specific results:
+
+**1. Baseline Comparisons**
+- **Single-LLM Accuracy:** 88.0%
+- **Simple Voting Accuracy:** 92.0% 
+- **Full System Accuracy (Debate):** 84.0% (21/25 correct)
+
+*Analytical Insight:* Surprisingly, Simple Voting outperformed the full debate system. This highlights a known LLM phenomenon (sycophancy/groupthink) where an incorrect but highly confident agent can sway others during peer review, leading to a degraded final consensus.
+
+**2. System Dynamics**
+- **Consensus Rate:** 60.0% (In 15 out of 25 problems, all 3 solvers converged on the exact same answer after refinement).
+- **Judge Accuracy (on Disagreement):** 70.0%. In the 10 problems where solvers disagreed, the Judge successfully identified the correct answer 7 times.
+- **Improvement Tracking:** In 1 case, the peer-review and refinement stage successfully fixed an initial failure that the single LLM baseline missed.
+
+**3. Accuracy by Problem Category**
+- **Physics:** 100.0% (6/6)
+- **Math:** 85.7% (6/7)
+- **Logic:** 83.3% (5/6)
+- **Game Theory:** 66.7% (4/6) - *Proved to be the most challenging domain for the agents.*
 
 ---
 
@@ -170,19 +184,17 @@ The Phase 3 evaluation pipeline automatically calculates several advanced system
 
 ## Limitations
 
-1. **Shared knowledge gaps:** If all agents lack domain knowledge, peer review cannot resolve mistakes.
-2. **Computational cost:** The workflow requires multiple API calls per problem.
-3. **Error rate:** Occasional parsing failures, often due to JSON formatting issues or API timeouts.
+1. **Shared Knowledge Gaps & Groupthink:** As seen in the baseline metrics, debate can sometimes degrade performance if agents confidently agree on an incorrect logical path.
+2. **Computational Cost:** The workflow requires multiple API calls per problem (taking ~1.5 hours for 25 problems).
+3. **Parsing Errors:** Occasional fallback triggering due to strict JSON output constraints.
 
 ---
 
 ## Future Improvements
 
-- Add web search integration for factual queries
-- Implement confidence calibration
-- Use different LLM models for different roles
-- Improve retry handling to reduce error rate
-- Expand to broader problem domains
+- Implement confidence calibration to reduce groupthink during peer review.
+- Add web search integration for factual queries.
+- Use different LLM models (e.g., mixing Claude, GPT-4, and Gemini) for different roles to enforce true cognitive diversity.
 
 ---
 
