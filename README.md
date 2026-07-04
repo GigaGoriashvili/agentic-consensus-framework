@@ -131,10 +131,6 @@ This will:
 ![Winner Distribution](plots/3_winner_distribution.png)
 *Distribution of which persona's solution was ultimately selected by the Judge.*
 
-### Confidence Distribution
-![Confidence Distribution](plots/1_confidence_distribution.png)
-*Judge confidence levels compared to actual correctness.*
-
 ### Final Evaluation Metrics (Run Results)
 Based on our final evaluation of 25 challenging problems, the Phase 3 pipeline yielded the following specific results:
 
